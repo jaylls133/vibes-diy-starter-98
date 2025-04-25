@@ -10,7 +10,8 @@ interface Todo {
 }
 
 const Index = () => {
-  const { useLiveQuery, useDocument, database } = useFireproof<Todo>("todo-list");
+  // Remove the generic type parameter from useFireproof
+  const { useLiveQuery, useDocument, database } = useFireproof("todo-list");
 
   const {
     doc: newTodo,
@@ -22,7 +23,8 @@ const Index = () => {
     createdAt: Date.now()
   });
 
-  const { docs: todos } = useLiveQuery("_id", { 
+  // Use the Todo type with useLiveQuery to type the returned documents
+  const { docs: todos } = useLiveQuery<Todo>("_id", { 
     descending: true 
   });
 
