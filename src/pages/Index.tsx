@@ -1,14 +1,22 @@
 
 import { useFireproof } from "use-fireproof";
 
+// Define the Todo type to properly type our documents
+interface Todo {
+  _id?: string;
+  text: string;
+  completed: boolean;
+  createdAt: number;
+}
+
 const Index = () => {
-  const { useLiveQuery, useDocument, database } = useFireproof("todo-list");
+  const { useLiveQuery, useDocument, database } = useFireproof<Todo>("todo-list");
 
   const {
     doc: newTodo,
     merge: mergeNewTodo,
     submit: submitNewTodo
-  } = useDocument({
+  } = useDocument<Todo>({
     text: "",
     completed: false,
     createdAt: Date.now()
@@ -52,7 +60,7 @@ const Index = () => {
                   </span>
                 </div>
                 <button
-                  onClick={() => database.del(todo._id)}
+                  onClick={() => database.del(todo._id!)}
                   className="text-sm px-2 py-1 text-red-600 hover:text-red-800 transition-colors"
                 >
                   Delete
