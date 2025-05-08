@@ -1,22 +1,46 @@
+
 import React, { useState, useRef } from "react";
 import { useFireproof } from "use-fireproof";
 import { callAI } from "call-ai";
+import { toast } from "@/components/ui/use-toast";
+
+// Define TypeScript interfaces for our documents
+interface CaptionRequest {
+  _id?: string;
+  type: "caption-request";
+  description: string;
+  timestamp: number;
+}
+
+interface Caption {
+  text: string;
+  style: string;
+}
+
+interface CaptionResponse {
+  _id?: string;
+  type: "caption-response";
+  description: string;
+  captions: Caption[];
+  timestamp: number;
+  likes: Record<string, boolean>;
+}
 
 export default function App() {
   const { database, useLiveQuery, useDocument } = useFireproof("instagram-caption-generator");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState(null);
-  const descriptionRef = useRef(null);
+  const [error, setError] = useState<string | null>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   // Document for storing the current request
-  const { doc, merge, submit } = useDocument({
+  const { doc, merge, submit } = useDocument<CaptionRequest>({
     type: "caption-request",
     description: "",
-    timestamp: 0
+    timestamp: Date.now()
   });
 
   // Query for all previously generated captions, sorted by newest first
-  const { docs: captionDocs } = useLiveQuery("type", {
+  const { docs: captionDocs } = useLiveQuery<CaptionResponse>("type", {
     key: "caption-response",
     descending: true,
   });
@@ -67,6 +91,10 @@ export default function App() {
       
       // Reset form
       merge({ description: "" });
+      toast({
+        title: "Captions Generated",
+        description: "Your Instagram captions are ready!",
+      });
     } catch (err) {
       setError("Failed to generate captions. Please try again.");
       console.error(err);
@@ -75,7 +103,7 @@ export default function App() {
     }
   };
 
-  const toggleLike = async (captionDoc, index) => {
+  const toggleLike = async (captionDoc: CaptionResponse, index: number) => {
     const newCaptionDoc = { ...captionDoc };
     const likeKey = `caption-${index}`;
     
@@ -89,8 +117,13 @@ export default function App() {
     await database.put(newCaptionDoc);
   };
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied!",
+      description: "Caption copied to clipboard",
+      duration: 2000,
+    });
   };
   
   const generateDemoData = async () => {
@@ -122,7 +155,7 @@ export default function App() {
               ref={descriptionRef}
               className="w-full bg-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 transition duration-200"
               placeholder="e.g., Beach vacation, Coffee shop morning, New workout routine..."
-              rows="3"
+              rows={3}
               value={doc.description}
               onChange={(e) => merge({ description: e.target.value })}
             />
