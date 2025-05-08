@@ -1,79 +1,229 @@
-
+import React, { useState, useRef } from "react";
 import { useFireproof } from "use-fireproof";
+import { callAI } from "call-ai";
 
-// Define the Todo type to properly type our documents
-interface Todo {
-  _id?: string;
-  text: string;
-  completed: boolean;
-  createdAt: number;
-}
+export default function App() {
+  const { database, useLiveQuery, useDocument } = useFireproof("instagram-caption-generator");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState(null);
+  const descriptionRef = useRef(null);
 
-const Index = () => {
-  // Remove the generic type parameter from useFireproof
-  const { useLiveQuery, useDocument, database } = useFireproof("todo-list");
-
-  const {
-    doc: newTodo,
-    merge: mergeNewTodo,
-    submit: submitNewTodo
-  } = useDocument<Todo>({
-    text: "",
-    completed: false,
-    createdAt: Date.now()
+  // Document for storing the current request
+  const { doc, merge, submit } = useDocument({
+    type: "caption-request",
+    description: "",
+    timestamp: 0
   });
 
-  // Use the Todo type with useLiveQuery to type the returned documents
-  const { docs: todos } = useLiveQuery<Todo>("_id", { 
-    descending: true 
+  // Query for all previously generated captions, sorted by newest first
+  const { docs: captionDocs } = useLiveQuery("type", {
+    key: "caption-response",
+    descending: true,
   });
+
+  const generateCaptions = async () => {
+    setError(null);
+    if (!doc.description.trim()) {
+      setError("Please enter a description for your post");
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+      // Save the request
+      await submit();
+      
+      // Generate captions using AI
+      const result = await callAI(
+        `Generate 5 engaging, catchy Instagram captions for a post about: ${doc.description}. 
+        Make them diverse in style (witty, inspirational, punny, etc).`,
+        {
+          schema: {
+            properties: {
+              captions: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    text: { type: "string" },
+                    style: { type: "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      );
+      
+      // Parse result and save to database
+      const captionData = JSON.parse(result);
+      await database.put({
+        type: "caption-response",
+        description: doc.description,
+        captions: captionData.captions,
+        timestamp: Date.now(),
+        likes: {}
+      });
+      
+      // Reset form
+      merge({ description: "" });
+    } catch (err) {
+      setError("Failed to generate captions. Please try again.");
+      console.error(err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const toggleLike = async (captionDoc, index) => {
+    const newCaptionDoc = { ...captionDoc };
+    const likeKey = `caption-${index}`;
+    
+    if (newCaptionDoc.likes && newCaptionDoc.likes[likeKey]) {
+      delete newCaptionDoc.likes[likeKey];
+    } else {
+      if (!newCaptionDoc.likes) newCaptionDoc.likes = {};
+      newCaptionDoc.likes[likeKey] = true;
+    }
+    
+    await database.put(newCaptionDoc);
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+  
+  const generateDemoData = async () => {
+    merge({ description: "Beach vacation at sunset" });
+    await generateCaptions();
+  };
 
   return (
-    <div className="min-h-screen bg-purple-50 py-8 px-4">
-      <div className="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="p-6">
-          <h1 className="text-2xl font-bold text-purple-900 mb-6">My Todos</h1>
-          
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            if (newTodo.text.trim()) submitNewTodo();
-          }} className="mb-6">
-            <input
-              type="text"
-              value={newTodo.text}
-              onChange={(e) => mergeNewTodo({ text: e.target.value })}
-              placeholder="What needs to be done?"
-              className="w-full px-4 py-2 rounded-lg border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          </form>
+    <div className="min-h-screen bg-gray-900 text-white p-4">
+      <div className="max-w-3xl mx-auto">
+        {/* Header */}
+        <header className="mb-8 text-center">
+          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-pink-500 to-blue-500 bg-clip-text text-transparent mb-2">
+            Instagram Caption Generator
+          </h1>
+          <p className="text-gray-400 italic">
+            Enter your post description and get AI-generated catchy captions for your Instagram posts
+          </p>
+        </header>
 
-          <ul className="space-y-3">
-            {todos.map((todo) => (
-              <li key={todo._id} className="flex items-center justify-between bg-purple-50 p-3 rounded-lg">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={todo.completed}
-                    onChange={() => database.put({ ...todo, completed: !todo.completed })}
-                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
-                  />
-                  <span className={`ml-3 ${todo.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                    {todo.text}
-                  </span>
-                </div>
-                <button
-                  onClick={() => database.del(todo._id!)}
-                  className="text-sm px-2 py-1 text-red-600 hover:text-red-800 transition-colors"
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Input Section */}
+        <div className="bg-gray-800 rounded-xl p-6 mb-8 shadow-lg">
+          <div className="mb-4">
+            <label htmlFor="description" className="block mb-2 text-gray-300">
+              What's your post about?
+            </label>
+            <textarea
+              id="description"
+              ref={descriptionRef}
+              className="w-full bg-gray-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-pink-500 transition duration-200"
+              placeholder="e.g., Beach vacation, Coffee shop morning, New workout routine..."
+              rows="3"
+              value={doc.description}
+              onChange={(e) => merge({ description: e.target.value })}
+            />
+          </div>
+          
+          {error && (
+            <div className="text-red-400 mb-4 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-between">
+            <button
+              className="bg-gradient-to-r from-pink-500 to-blue-500 hover:from-pink-600 hover:to-blue-600 text-white font-medium py-2 px-6 rounded-lg transition duration-200 flex items-center justify-center w-full mr-2"
+              onClick={generateCaptions}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Generating...
+                </>
+              ) : (
+                "Generate Captions"
+              )}
+            </button>
+            <button
+              className="bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition duration-200 ml-2"
+              onClick={generateDemoData}
+              disabled={isGenerating}
+            >
+              Demo Data
+            </button>
+          </div>
         </div>
+
+        {/* Captions Section */}
+        {captionDocs.length > 0 && (
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Generated Captions</h2>
+            </div>
+            
+            <div className="space-y-4">
+              {captionDocs.map((captionDoc) => (
+                <div key={captionDoc._id} className="bg-gray-800 rounded-xl p-4 shadow-lg">
+                  <div className="text-sm text-gray-400 mb-2">
+                    For post about: {captionDoc.description}
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-4">
+                    {captionDoc.captions.map((caption, index) => (
+                      <div 
+                        key={index} 
+                        className="bg-gray-700 rounded-lg p-4 transition-all duration-300 hover:shadow-lg transform hover:-translate-y-1"
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="inline-block bg-gradient-to-r from-pink-500 to-blue-500 text-xs text-white px-2 py-1 rounded mb-2">
+                            {caption.style}
+                          </span>
+                        </div>
+                        <p className="text-white mb-3">
+                          {caption.text}
+                        </p>
+                        <div className="flex justify-end space-x-2">
+                          <button
+                            className={`flex items-center justify-center p-2 rounded-full transition-colors duration-200 ${
+                              captionDoc.likes && captionDoc.likes[`caption-${index}`]
+                                ? "bg-pink-500 text-white"
+                                : "bg-gray-600 hover:bg-gray-500"
+                            }`}
+                            onClick={() => toggleLike(captionDoc, index)}
+                            aria-label="Like caption"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                          <button
+                            className="flex items-center justify-center p-2 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors duration-200"
+                            onClick={() => copyToClipboard(caption.text)}
+                            aria-label="Copy caption"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z" />
+                              <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v6h-4.586l1.293-1.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L10.414 13H15v3a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM15 11h2a1 1 0 110 2h-2v-2z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-};
-
-export default Index;
+}
