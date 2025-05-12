@@ -26,6 +26,11 @@ interface CaptionResponse {
   likes: Record<string, boolean>;
 }
 
+// Define the StreamResponse interface for callAI's return type
+interface StreamResponse {
+  toString(): string;
+}
+
 export default function App() {
   const { database, useLiveQuery, useDocument } = useFireproof("instagram-caption-generator");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -80,7 +85,10 @@ export default function App() {
       );
       
       // Parse result and save to database
-      const captionData = JSON.parse(result);
+      // Handle result which could be string or StreamResponse
+      const resultString = typeof result === 'string' ? result : result.toString();
+      const captionData = JSON.parse(resultString);
+      
       await database.put({
         type: "caption-response",
         description: doc.description,
