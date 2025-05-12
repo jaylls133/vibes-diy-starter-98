@@ -1,8 +1,13 @@
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useFireproof } from "use-fireproof";
 import { callAI } from "call-ai";
 import { toast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { InfoIcon } from "lucide-react";
 
 // Define TypeScript interfaces for our documents
 interface CaptionRequest {
@@ -36,6 +41,18 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const [apiKey, setApiKey] = useState<string>("");
+  const [isApiKeyDialogOpen, setIsApiKeyDialogOpen] = useState<boolean>(false);
+  
+  // Load API key from localStorage on component mount
+  useEffect(() => {
+    const savedApiKey = localStorage.getItem("callai-api-key");
+    if (savedApiKey) {
+      setApiKey(savedApiKey);
+    } else {
+      setIsApiKeyDialogOpen(true);
+    }
+  }, []);
 
   // Document for storing the current request
   const { doc, merge, submit } = useDocument<CaptionRequest>({
@@ -50,10 +67,28 @@ export default function App() {
     descending: true,
   });
 
+  const saveApiKey = () => {
+    if (apiKey.trim()) {
+      localStorage.setItem("callai-api-key", apiKey);
+      setIsApiKeyDialogOpen(false);
+      toast({
+        title: "API Key Saved",
+        description: "Your API key has been saved for future use.",
+      });
+    } else {
+      setError("Please enter a valid API key");
+    }
+  };
+
   const generateCaptions = async () => {
     setError(null);
     if (!doc.description.trim()) {
       setError("Please enter a description for your post");
+      return;
+    }
+
+    if (!apiKey) {
+      setIsApiKeyDialogOpen(true);
       return;
     }
 
@@ -62,11 +97,12 @@ export default function App() {
       // Save the request
       await submit();
       
-      // Generate captions using AI
+      // Generate captions using AI with the provided API key
       const result = await callAI(
         `Generate 5 engaging, catchy Instagram captions for a post about: ${doc.description}. 
         Make them diverse in style (witty, inspirational, punny, etc).`,
         {
+          apiKey: apiKey,
           schema: {
             properties: {
               captions: {
@@ -104,11 +140,15 @@ export default function App() {
         description: "Your Instagram captions are ready!",
       });
     } catch (err) {
-      setError("Failed to generate captions. Please try again.");
       console.error(err);
+      setError("Failed to generate captions. Please check your API key and try again.");
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const changeApiKey = () => {
+    setIsApiKeyDialogOpen(true);
   };
 
   const toggleLike = async (captionDoc: CaptionResponse, index: number) => {
@@ -135,6 +175,10 @@ export default function App() {
   };
   
   const generateDemoData = async () => {
+    if (!apiKey) {
+      setIsApiKeyDialogOpen(true);
+      return;
+    }
     merge({ description: "Beach vacation at sunset" });
     await generateCaptions();
   };
@@ -150,6 +194,14 @@ export default function App() {
           <p className="text-gray-400 italic">
             Enter your post description and get AI-generated catchy captions for your Instagram posts
           </p>
+          {apiKey && (
+            <button 
+              onClick={changeApiKey}
+              className="mt-2 text-sm text-gray-400 hover:text-white underline"
+            >
+              Change API Key
+            </button>
+          )}
         </header>
 
         {/* Input Section */}
@@ -202,6 +254,46 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* API Key Dialog */}
+        <Dialog open={isApiKeyDialogOpen} onOpenChange={setIsApiKeyDialogOpen}>
+          <DialogContent className="bg-gray-800 text-white border-gray-700">
+            <DialogHeader>
+              <DialogTitle>Enter your CallAI API Key</DialogTitle>
+              <DialogDescription className="text-gray-400">
+                This app requires a CallAI API key to generate captions.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <Alert className="bg-gray-700 border-blue-500 text-gray-200 mb-4">
+              <InfoIcon className="h-4 w-4 text-blue-400" />
+              <AlertDescription>
+                Your API key will be stored locally in your browser and is not sent to our servers.
+              </AlertDescription>
+            </Alert>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="apiKey" className="text-sm font-medium text-gray-300">
+                  API Key
+                </label>
+                <Input
+                  id="apiKey"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter your CallAI API key"
+                  className="bg-gray-700 border-gray-600 text-white"
+                />
+              </div>
+              <div className="text-xs text-gray-400">
+                Don't have an API key? Get one from <a href="https://call-ai.com/signup" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">call-ai.com</a>
+              </div>
+              <Button onClick={saveApiKey} className="w-full bg-gradient-to-r from-pink-500 to-blue-500 hover:from-pink-600 hover:to-blue-600">
+                Save API Key
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Captions Section */}
         {captionDocs.length > 0 && (
